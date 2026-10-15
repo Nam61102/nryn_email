@@ -1,0 +1,14 @@
+node_modules/
+dist/
+build/
+.expo/
+.expo-shared/
+*.log
+npm-debug.log*
+.DS_Store
+
+# Real secrets never get committed. The .env.example files are the templates that do.
+.env
+.env.local
+.env.*.local
+!.env.example
