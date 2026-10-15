@@ -48,7 +48,13 @@ const env = {
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID || '',
     clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
-    redirectUri: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:4100/api/auth/google/callback',
+    redirectUri:
+      process.env.GOOGLE_REDIRECT_URI ||
+      (process.env.RENDER_EXTERNAL_URL
+        ? `${process.env.RENDER_EXTERNAL_URL}/api/auth/google/callback`
+        : (process.env.NODE_ENV === 'production' || process.env.RENDER
+            ? 'https://nryn-email.onrender.com/api/auth/google/callback'
+            : 'http://localhost:4100/api/auth/google/callback')),
   },
 
   jwtSecret: process.env.JWT_SECRET,

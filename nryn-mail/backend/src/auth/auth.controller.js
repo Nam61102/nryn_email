@@ -126,8 +126,9 @@ async function callback(req, res) {
 
     return finish({ code: codeStore.issue(user._id) });
   } catch (err) {
-    log.error('auth', 'callback failed: ' + err.message);
-    return finish({ error: 'exchange_failed' });
+    const detail = err.response?.data ? JSON.stringify(err.response.data) : err.message;
+    log.error('auth', 'callback failed: ' + detail);
+    return finish({ error: 'exchange_failed', detail });
   }
 }
 

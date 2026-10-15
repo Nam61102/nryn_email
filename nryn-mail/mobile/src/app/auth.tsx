@@ -9,7 +9,7 @@ import { colors } from '../lib/theme';
 import { Button, ErrorNote, Loading } from '../ui/components';
 
 export default function AuthCallback() {
-  const params = useLocalSearchParams<{ code?: string; error?: string }>();
+  const params = useLocalSearchParams<{ code?: string; error?: string; detail?: string }>();
   const { refresh } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const exchangingRef = useRef(false);
@@ -21,9 +21,17 @@ export default function AuthCallback() {
 
       const code = params.code ? String(params.code) : '';
       const returnedError = params.error ? String(params.error) : '';
+      const errorDetail = params.detail ? String(params.detail) : '';
 
       if (returnedError) {
-        setError(`Google sign-in error: ${returnedError}`);
+        if (returnedError === 'exchange_failed') {
+          setError(
+            errorDetail ||
+              'Google rejected the token exchange. Please ensure GOOGLE_REDIRECT_URI on Render is https://nryn-email.onrender.com/api/auth/google/callback and is also listed in Google Cloud Console Credentials.'
+          );
+        } else {
+          setError(`Google sign-in error: ${returnedError}${errorDetail ? ` (${errorDetail})` : ''}`);
+        }
         return;
       }
 

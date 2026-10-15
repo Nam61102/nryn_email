@@ -15,20 +15,13 @@ import type {
 } from './types';
 
 function resolveApiUrl(): string {
-  if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location) {
-    const hostname = window.location.hostname;
-    const envUrl = process.env.EXPO_PUBLIC_API_URL;
-    if (
-      !envUrl ||
-      envUrl.includes('192.168.') ||
-      hostname === 'localhost' ||
-      hostname === '127.0.0.1'
-    ) {
-      return `http://${hostname || 'localhost'}:4100`;
-    }
+  const envUrl = process.env.EXPO_PUBLIC_API_URL;
+  if (envUrl && envUrl.trim()) {
+    return envUrl.trim().replace(/\/+$/, '');
   }
-  return (process.env.EXPO_PUBLIC_API_URL || 'http://localhost:4100').replace(/\/+$/, '');
+  return 'https://nryn-email.onrender.com';
 }
+
 
 export const API_URL = resolveApiUrl();
 
