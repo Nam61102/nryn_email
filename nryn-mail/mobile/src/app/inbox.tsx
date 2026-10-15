@@ -55,13 +55,10 @@ export default function Inbox() {
   useFocusEffect(
     useCallback(() => {
       load();
-      // Auto-sync immediately on focus so new incoming emails are fetched right away
-      emailApi.sync().then(() => load()).catch(() => {});
-
-      // Auto-poll every 15 seconds while user is actively looking at inbox
+      // Auto-poll inbox every 20 seconds while user is on this screen
       const timer = setInterval(() => {
-        emailApi.sync().then(() => load()).catch(() => load());
-      }, 15000);
+        load();
+      }, 20000);
 
       return () => clearInterval(timer);
     }, [load])
@@ -69,7 +66,7 @@ export default function Inbox() {
 
   const showToast = useCallback((text: string) => {
     setToast(text);
-    setTimeout(() => setToast(null), 5000);
+    setTimeout(() => setToast(null), 4000);
   }, []);
 
   useLiveUpdates(Boolean(me), {
@@ -84,23 +81,33 @@ export default function Inbox() {
   });
 
   async function onRefresh() {
+    if (refreshing) return;
     setRefreshing(true);
+    showToast('Checking for new emails…');
     try {
-      const res = await emailApi.sync();
-      showToast(
-        res.sync.inserted
-          ? `${res.sync.inserted} new email${res.sync.inserted === 1 ? '' : 's'}, ${res.triage.processed} triaged.`
-          : 'Inbox is up to date.'
-      );
+      // 1. Instantly reload existing database rows
       await load();
-    } catch (err) {
-      if (err instanceof ApiError) {
-        showToast(
-          err.code === 'reauth_required'
-            ? 'Gmail access expired — reconnect in Account.'
-            : err.message
-        );
+
+      // 2. Trigger fresh sync from Gmail
+      try {
+        const res = await emailApi.sync();
+        if (res && res.sync && res.sync.inserted > 0) {
+          showToast(`${res.sync.inserted} new email${res.sync.inserted === 1 ? '' : 's'} fetched!`);
+        } else {
+          showToast('Inbox is up to date.');
+        }
+      } catch (syncErr: any) {
+        if (syncErr?.code === 'reauth_required') {
+          showToast('Gmail access expired — reconnect in Account.');
+        } else {
+          showToast('Inbox refreshed.');
+        }
       }
+
+      // 3. Final load to ensure all new parsed emails render
+      await load();
+    } catch (err: any) {
+      showToast(err?.message || 'Could not refresh inbox.');
     } finally {
       setRefreshing(false);
     }
@@ -161,13 +168,17 @@ export default function Inbox() {
           accessibilityRole="button"
           accessibilityLabel="Refresh emails"
           onPress={onRefresh}
-          style={s.topBarBtn}
-          hitSlop={8}
+          style={({ pressed }) => [
+            s.topBarBtn,
+            { cursor: 'pointer' },
+            pressed && { opacity: 0.5, transform: [{ scale: 0.9 }] },
+          ]}
+          hitSlop={14}
         >
           {refreshing ? (
             <ActivityIndicator size="small" color={colors.primary} />
           ) : (
-            <Feather name="refresh-cw" size={17} color={colors.textMuted} />
+            <Feather name="refresh-cw" size={18} color={colors.primary} />
           )}
         </Pressable>
       </SafeAreaView>

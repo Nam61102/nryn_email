@@ -22,7 +22,7 @@ const aiLimiter = rateLimit({
 
 const syncLimiter = rateLimit({
   windowMs: 60 * 1000,
-  limit: 6,
+  limit: 30,
   keyGenerator: (req) => String(req.userId),
   message: { error: 'rate_limited' },
 });
