@@ -157,30 +157,19 @@ export default function Inbox() {
           <Feather name="arrow-left" size={20} color={colors.text} />
         </Pressable>
         <Text style={s.topBarTitle}>Emails</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Refresh emails"
-            onPress={onRefresh}
-            style={s.topBarBtn}
-            hitSlop={8}
-          >
-            {refreshing ? (
-              <ActivityIndicator size="small" color={colors.primary} />
-            ) : (
-              <Feather name="refresh-cw" size={17} color={colors.textMuted} />
-            )}
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Account Settings"
-            onPress={() => router.push('/account')}
-            style={s.topBarBtn}
-            hitSlop={8}
-          >
-            <Feather name="settings" size={18} color={colors.textMuted} />
-          </Pressable>
-        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Refresh emails"
+          onPress={onRefresh}
+          style={s.topBarBtn}
+          hitSlop={8}
+        >
+          {refreshing ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : (
+            <Feather name="refresh-cw" size={17} color={colors.textMuted} />
+          )}
+        </Pressable>
       </SafeAreaView>
 
       {toast ? <Toast text={toast} onClose={() => setToast(null)} /> : null}
