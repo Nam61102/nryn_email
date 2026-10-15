@@ -55,6 +55,15 @@ export default function Inbox() {
   useFocusEffect(
     useCallback(() => {
       load();
+      // Auto-sync immediately on focus so new incoming emails are fetched right away
+      emailApi.sync().then(() => load()).catch(() => {});
+
+      // Auto-poll every 15 seconds while user is actively looking at inbox
+      const timer = setInterval(() => {
+        emailApi.sync().then(() => load()).catch(() => load());
+      }, 15000);
+
+      return () => clearInterval(timer);
     }, [load])
   );
 
@@ -148,15 +157,30 @@ export default function Inbox() {
           <Feather name="arrow-left" size={20} color={colors.text} />
         </Pressable>
         <Text style={s.topBarTitle}>Emails</Text>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Account Settings"
-          onPress={() => router.push('/account')}
-          style={s.topBarBtn}
-          hitSlop={8}
-        >
-          <Feather name="settings" size={18} color={colors.textMuted} />
-        </Pressable>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Refresh emails"
+            onPress={onRefresh}
+            style={s.topBarBtn}
+            hitSlop={8}
+          >
+            {refreshing ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <Feather name="refresh-cw" size={17} color={colors.textMuted} />
+            )}
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Account Settings"
+            onPress={() => router.push('/account')}
+            style={s.topBarBtn}
+            hitSlop={8}
+          >
+            <Feather name="settings" size={18} color={colors.textMuted} />
+          </Pressable>
+        </View>
       </SafeAreaView>
 
       {toast ? <Toast text={toast} onClose={() => setToast(null)} /> : null}

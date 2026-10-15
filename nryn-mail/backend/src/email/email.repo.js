@@ -24,6 +24,39 @@ function accountStatus(userId) {
     .lean();
 }
 
+function checkIsMeeting(e) {
+  const hasIcs = (e.attachments || []).some((a) =>
+    (a.filename && a.filename.toLowerCase().endsWith('.ics')) ||
+    (a.mimeType && a.mimeType.toLowerCase().includes('calendar'))
+  );
+  if (hasIcs) return true;
+
+  const text = `${e.subject || ''} ${e.snippet || ''} ${e.fromEmail || ''}`.toLowerCase();
+  const meetingKeywords = [
+    'meeting',
+    'meet.google',
+    'google meet',
+    'zoom.us',
+    'zoom meeting',
+    'teams meeting',
+    'microsoft teams',
+    'invitation:',
+    'updated invitation:',
+    'cancelled invitation:',
+    'calendar invite',
+    'calendar-notification',
+    'discussion:',
+    'sync call',
+    '1:1',
+    'interview',
+    'appointment',
+    'scheduled a meeting',
+    'huddle',
+    'standup',
+  ];
+  return meetingKeywords.some((kw) => text.includes(kw));
+}
+
 /** Joins each email with its insight, then splits into priority vs the rest. */
 async function inbox(userId, { includeIgnored = false, limit = 200 } = {}) {
   const emails = await Email.find(
@@ -40,6 +73,24 @@ async function inbox(userId, { includeIgnored = false, limit = 200 } = {}) {
 
   const rows = emails.map((e) => {
     const i = byEmail.get(String(e._id)) || null;
+    let priority = i ? i.priority : null;
+    let category = i ? i.category : null;
+    let insight = i ? i.insight : '';
+    let needsReply = i ? i.needsReply : false;
+
+    const isMeet = checkIsMeeting(e) || category === 'meeting';
+    if (isMeet) {
+      category = 'meeting';
+      if (!priority || priority === 'ignore' || priority === 'fyi') {
+        priority = 'action_required';
+      }
+      if (!insight) {
+        const cleanSubj = (e.subject || 'Meeting').replace(/^(Invitation:\s*|Updated invitation:\s*)/i, '').trim();
+        insight = `Meeting invitation: "${cleanSubj}". Please review or attend.`;
+      }
+      needsReply = true;
+    }
+
     return {
       id: String(e._id),
       gmailId: e.gmailId,
@@ -52,19 +103,19 @@ async function inbox(userId, { includeIgnored = false, limit = 200 } = {}) {
       isUnread: e.isUnread,
       repliedAt: e.repliedAt,
       attachmentCount: (e.attachments || []).length,
-      triaged: Boolean(i),
-      priority: i ? i.priority : null,
-      category: i ? i.category : null,
-      insight: i ? i.insight : '',
-      needsReply: i ? i.needsReply : false,
+      triaged: Boolean(i) || isMeet,
+      priority,
+      category,
+      insight,
+      needsReply,
       deadlineAt: i ? i.deadlineAt : null,
     };
   });
 
-  const priority = rows.filter((r) => r.priority === 'urgent' || r.priority === 'action_required');
-  const rank = { urgent: 0, action_required: 1 };
+  const priority = rows.filter((r) => r.priority === 'urgent' || r.priority === 'action_required' || r.category === 'meeting');
+  const rank = { urgent: 0, action_required: 1, fyi: 2, ignore: 3 };
   priority.sort((a, b) => {
-    const d = rank[a.priority] - rank[b.priority];
+    const d = (rank[a.priority] ?? 1) - (rank[b.priority] ?? 1);
     return d !== 0 ? d : new Date(b.receivedAt) - new Date(a.receivedAt);
   });
 

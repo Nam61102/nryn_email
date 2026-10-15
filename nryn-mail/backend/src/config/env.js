@@ -71,7 +71,7 @@ const env = {
   },
 
   sync: {
-    cron: process.env.SYNC_CRON || '*/3 * * * *',
+    cron: process.env.SYNC_CRON || '*/20 * * * * *',
     bootstrapDays: int(process.env.BOOTSTRAP_DAYS, 30),
     bootstrapMaxEmails: int(process.env.BOOTSTRAP_MAX_EMAILS, 300),
     triageBodyCharLimit: int(process.env.TRIAGE_BODY_CHAR_LIMIT, 1500),

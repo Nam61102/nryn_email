@@ -28,6 +28,21 @@ async function getInbox(req, res, next) {
     const includeIgnored = req.query.includeIgnored === '1';
     const data = await repo.inbox(req.userId, { includeIgnored });
     const account = await repo.accountStatus(req.userId);
+    // Trigger quick background sync if last sync was more than 15 seconds ago
+    if (account && account.status === 'active' && (!account.lastSyncedAt || Date.now() - new Date(account.lastSyncedAt).getTime() > 15000)) {
+      setImmediate(async () => {
+        try {
+          const syncResult = await sync.syncAccount(account._id);
+          if (syncResult && syncResult.inserted > 0) {
+            await processor.processPending(account._id, { limit: 20 });
+            emitToUser(req.userId, 'email:synced', { count: syncResult.inserted });
+          }
+        } catch (e) {
+          log.debug('inbox', 'background auto-sync tick: ' + e.message);
+        }
+      });
+    }
+
     return res.json({
       ...data,
       account: account
