@@ -26,16 +26,20 @@ function notFound(res) {
 async function getInbox(req, res, next) {
   try {
     const includeIgnored = req.query.includeIgnored === '1';
-    const data = await repo.inbox(req.userId, { includeIgnored });
-    const account = await repo.accountStatus(req.userId);
+    const accountId = req.query.accountId ? String(req.query.accountId) : null;
+    const data = await repo.inbox(req.userId, { includeIgnored, accountId });
+
+    const accounts = data.accounts || [];
+    const currentAccount = accounts.find((a) => a.id === data.selectedAccountId) || accounts[0] || null;
+
     // Trigger quick background sync if last sync was more than 15 seconds ago
-    if (account && account.status === 'active' && (!account.lastSyncedAt || Date.now() - new Date(account.lastSyncedAt).getTime() > 15000)) {
+    if (currentAccount && currentAccount.status === 'active' && (!currentAccount.lastSyncedAt || Date.now() - new Date(currentAccount.lastSyncedAt).getTime() > 15000)) {
       setImmediate(async () => {
         try {
-          const syncResult = await sync.syncAccount(account._id);
+          const syncResult = await sync.syncAccount(currentAccount.id);
           if (syncResult && syncResult.inserted > 0) {
-            await processor.processPending(account._id, { limit: 20 });
-            emitToUser(req.userId, 'email:synced', { count: syncResult.inserted });
+            await processor.processPending(currentAccount.id, { limit: 20 });
+            emitToUser(req.userId, 'email:synced', { count: syncResult.inserted, accountId: currentAccount.id });
           }
         } catch (e) {
           log.debug('inbox', 'background auto-sync tick: ' + e.message);
@@ -45,13 +49,7 @@ async function getInbox(req, res, next) {
 
     return res.json({
       ...data,
-      account: account
-        ? {
-            emailAddress: account.emailAddress,
-            status: account.status,
-            lastSyncedAt: account.lastSyncedAt,
-          }
-        : null,
+      account: currentAccount,
     });
   } catch (err) {
     return next(err);
@@ -61,7 +59,14 @@ async function getInbox(req, res, next) {
 /** POST /api/email/sync — the manual refresh button. */
 async function postSync(req, res, next) {
   try {
-    const account = await repo.activeAccount(req.userId);
+    const requestedId = req.query.accountId || (req.body && req.body.accountId);
+    let account;
+    if (requestedId) {
+      account = await repo.accountDoc(req.userId, requestedId);
+    }
+    if (!account) {
+      account = await repo.activeAccount(req.userId);
+    }
     if (!account) return res.status(400).json({ error: 'no_connected_account' });
     if (account.status !== 'active') {
       return res.status(409).json({ error: account.status, hint: 'Reconnect Gmail to continue.' });
@@ -70,8 +75,8 @@ async function postSync(req, res, next) {
     const result = await sync.syncAccount(account._id);
     const triage = await processor.processPending(account._id, { limit: 40 });
 
-    emitToUser(req.userId, 'email:synced', { count: result.inserted || 0 });
-    return res.json({ sync: result, triage });
+    emitToUser(req.userId, 'email:synced', { count: result.inserted || 0, accountId: String(account._id) });
+    return res.json({ sync: result, triage, accountId: String(account._id) });
   } catch (err) {
     return next(err);
   }

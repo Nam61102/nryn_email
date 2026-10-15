@@ -22,6 +22,7 @@ interface AuthValue {
   signingIn: boolean;
   error: { title: string; detail?: string; hint?: string } | null;
   signIn: () => Promise<void>;
+  addAccount: () => Promise<void>;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
   clearError: () => void;
@@ -165,6 +166,65 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [refresh]);
 
+  const addAccount = useCallback(async () => {
+    setSigningIn(true);
+    setError(null);
+    try {
+      const redirectUri = Linking.createURL('auth');
+      const { url } = await authApi.connectUrl(redirectUri, me?.user?.id);
+
+      if (Platform.OS === 'web') {
+        if (typeof window !== 'undefined') {
+          window.location.href = url;
+          return;
+        }
+      }
+
+      const result = await WebBrowser.openAuthSessionAsync(url, redirectUri);
+
+      if (result.type === 'cancel' || result.type === 'dismiss') {
+        setSigningIn(false);
+        return;
+      }
+      if (result.type !== 'success' || !result.url) {
+        setError({ title: 'Connection cancelled', detail: 'The browser closed unexpectedly.' });
+        setSigningIn(false);
+        return;
+      }
+
+      const { queryParams } = Linking.parse(result.url);
+      const returnedError = queryParams?.error ? String(queryParams.error) : '';
+      const code = queryParams?.code ? String(queryParams.code) : '';
+
+      if (returnedError) {
+        setError({ title: 'Could not add email', detail: describeAuthError(returnedError) });
+        setSigningIn(false);
+        return;
+      }
+      if (!code) {
+        setError({ title: 'Could not add email', detail: 'No code came back from Google.' });
+        setSigningIn(false);
+        return;
+      }
+
+      const { token } = await authApi.exchange(code);
+      await tokenStore.set(token);
+      await refresh();
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError({
+          title: 'Could not add email account',
+          detail: err.message,
+          hint: err.hint,
+        });
+      } else {
+        setError({ title: 'Connection failed' });
+      }
+    } finally {
+      setSigningIn(false);
+    }
+  }, [me?.user?.id, refresh]);
+
   const signOut = useCallback(async () => {
     try {
       await authApi.disconnect();
@@ -182,11 +242,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signingIn,
       error,
       signIn,
+      addAccount,
       signOut,
       refresh,
       clearError: () => setError(null),
     }),
-    [me, loading, signingIn, error, signIn, signOut, refresh]
+    [me, loading, signingIn, error, signIn, addAccount, signOut, refresh]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -34,6 +34,7 @@ function authUrl(req, res) {
   if (!env.googleConfigured) return googleNotConfigured(res);
 
   const requested = req.query.redirect ? String(req.query.redirect) : '';
+  const linkUser = req.query.linkUser ? String(req.query.linkUser) : '';
   if (requested && !oauth.isAllowedRedirect(requested)) {
     log.warn('auth', 'rejected redirect uri: ' + requested.slice(0, 120));
     return res.status(400).json({
@@ -44,7 +45,7 @@ function authUrl(req, res) {
     });
   }
 
-  return res.json({ url: oauth.authUrl(requested) });
+  return res.json({ url: oauth.authUrl(requested, linkUser) });
 }
 
 /**
@@ -79,18 +80,24 @@ async function callback(req, res) {
     const { client, tokens } = await oauth.exchangeCode(String(code));
     const profile = await oauth.fetchProfile(client);
 
-    const user = await User.findOneAndUpdate(
-      { googleSub: profile.id },
-      {
-        $set: {
-          email: profile.email,
-          displayName: profile.name || '',
-          avatarUrl: profile.picture || '',
-          lastSeenAt: new Date(),
+    let user;
+    if (payload && payload.u) {
+      user = await User.findById(payload.u);
+    }
+    if (!user) {
+      user = await User.findOneAndUpdate(
+        { googleSub: profile.id },
+        {
+          $set: {
+            email: profile.email,
+            displayName: profile.name || '',
+            avatarUrl: profile.picture || '',
+            lastSeenAt: new Date(),
+          },
         },
-      },
-      { upsert: true, new: true }
-    );
+        { upsert: true, new: true }
+      );
+    }
 
     // A re-consent may omit refresh_token; keep the one already stored.
     const set = {
@@ -164,7 +171,8 @@ async function exchange(req, res) {
 
 /** GET /api/auth/me */
 async function me(req, res) {
-  const account = await repo.accountStatus(req.userId);
+  const accounts = await repo.allAccounts(req.userId);
+  const primary = accounts[0] || null;
   return res.json({
     user: {
       id: String(req.user._id),
@@ -172,16 +180,8 @@ async function me(req, res) {
       displayName: req.user.displayName,
       avatarUrl: req.user.avatarUrl,
     },
-    account: account
-      ? {
-          id: String(account._id),
-          emailAddress: account.emailAddress,
-          status: account.status,
-          lastSyncedAt: account.lastSyncedAt,
-          lastError: account.lastError || '',
-          canSend: (account.scopes || []).some((s) => s.includes('gmail.send')),
-        }
-      : null,
+    account: primary,
+    accounts,
   });
 }
 

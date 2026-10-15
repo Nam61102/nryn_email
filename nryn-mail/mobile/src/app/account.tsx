@@ -11,7 +11,7 @@ import { Button, Chip, ErrorNote, formatWhen } from '../ui/components';
 import { BottomNav } from '../ui/BottomNav';
 
 export default function Account() {
-  const { me, signOut } = useAuth();
+  const { me, signOut, addAccount } = useAuth();
   const [busy, setBusy] = useState(false);
 
   async function disconnect() {
@@ -25,6 +25,7 @@ export default function Account() {
   }
 
   const account = me?.account;
+  const accounts = me?.accounts && me.accounts.length > 0 ? me.accounts : (account ? [account] : []);
 
   return (
     <View style={s.root}>
@@ -41,7 +42,7 @@ export default function Account() {
         <View style={s.card}>
           <View style={s.identity}>
             <View style={s.mark}>
-              <Feather name="mail" size={19} color={colors.primaryDark} />
+              <Feather name="user" size={19} color={colors.primaryDark} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={s.name}>{me?.user.displayName || 'You'}</Text>
@@ -50,14 +51,55 @@ export default function Account() {
               </Text>
             </View>
           </View>
+        </View>
 
-          <View style={s.chipRow}>
-            {account?.status === 'active' ? <Chip tone="success">Gmail connected</Chip> : null}
-            {account?.canSend ? <Chip tone="primary">Send enabled</Chip> : <Chip>Read-only</Chip>}
-            {account?.lastSyncedAt ? (
-              <Chip>{`Synced ${formatWhen(account.lastSyncedAt)}`}</Chip>
-            ) : null}
+        {/* Connected Email Accounts Section */}
+        <View style={s.card}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <Text style={s.sectionTitle}>CONNECTED EMAIL ACCOUNTS ({accounts.length})</Text>
+            <Pressable
+              onPress={() => addAccount()}
+              style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', gap: 5 }, pressed && { opacity: 0.7 }]}
+              hitSlop={8}
+            >
+              <Feather name="plus-circle" size={15} color={colors.primary} />
+              <Text style={{ fontSize: 13, fontWeight: '700', color: colors.primary }}>Add Account</Text>
+            </Pressable>
           </View>
+
+          {accounts.map((acc, index) => (
+            <View
+              key={acc.id || index}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+                paddingVertical: 10,
+                borderTopWidth: index > 0 ? 1 : 0,
+                borderTopColor: colors.borderSoft,
+              }}
+            >
+              <View style={[s.mark, { width: 34, height: 34, borderRadius: 17 }]}>
+                <Feather name="mail" size={16} color={colors.primaryDark} />
+              </View>
+              <View style={{ flex: 1, gap: 3 }}>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text }}>
+                  {acc.emailAddress}
+                </Text>
+                <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <Chip tone={acc.status === 'active' ? 'success' : 'urgent'}>
+                    {acc.status === 'active' ? 'Gmail connected' : 'Reauth required'}
+                  </Chip>
+                  {acc.canSend ? <Chip tone="primary">Send enabled</Chip> : null}
+                  {acc.lastSyncedAt ? (
+                    <Text style={{ fontSize: 11, color: colors.textMuted }}>
+                      Synced {formatWhen(acc.lastSyncedAt)}
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+            </View>
+          ))}
         </View>
 
         {account?.status === 'reauth_required' ? (
@@ -165,4 +207,5 @@ const s = StyleSheet.create({
   metaLabel: { fontSize: 10.5, fontWeight: '700', letterSpacing: 1.1, color: colors.textMuted },
   metaValue: { fontSize: 14, fontWeight: '600', color: colors.text },
   metaHint: { fontSize: 12, lineHeight: 18, color: colors.textMuted },
+  sectionTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 0.8, color: colors.textMuted },
 });

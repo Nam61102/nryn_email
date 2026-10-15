@@ -59,10 +59,12 @@ function isAllowedRedirect(uri) {
  * state is the only CSRF protection the callback has — and it is also how the
  * app's chosen redirect survives the round trip without being tamperable.
  */
-function makeState(appRedirect) {
-  return jwt.sign({ n: randomToken(12), r: appRedirect || '' }, env.jwtSecret, {
-    expiresIn: '10m',
-  });
+function makeState(appRedirect, linkUserId = '') {
+  return jwt.sign(
+    { n: randomToken(12), r: appRedirect || '', u: linkUserId ? String(linkUserId) : '' },
+    env.jwtSecret,
+    { expiresIn: '10m' }
+  );
 }
 
 /** Returns the decoded payload, or null when the state is missing or forged. */
@@ -75,13 +77,13 @@ function verifyState(state) {
   }
 }
 
-function authUrl(appRedirect) {
+function authUrl(appRedirect, linkUserId = '') {
   return newClient().generateAuthUrl({
-    access_type: 'offline',  // without this there is no refresh_token
-    prompt: 'consent',       // force it on every authorisation so we never miss it
+    access_type: 'offline', // without this there is no refresh_token
+    prompt: 'select_account consent', // allow picking or switching Google accounts
     include_granted_scopes: true,
     scope: SCOPES,
-    state: makeState(appRedirect),
+    state: makeState(appRedirect, linkUserId),
   });
 }
 

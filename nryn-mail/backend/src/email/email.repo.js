@@ -24,6 +24,12 @@ function accountStatus(userId) {
     .lean();
 }
 
+function allAccounts(userId) {
+  return EmailAccount.find({ userId, status: { $ne: 'revoked' } }, { accessToken: 0, refreshToken: 0 })
+    .sort({ createdAt: 1 })
+    .lean();
+}
+
 function checkIsMeeting(e) {
   const hasIcs = (e.attachments || []).some((a) =>
     (a.filename && a.filename.toLowerCase().endsWith('.ics')) ||
@@ -58,9 +64,22 @@ function checkIsMeeting(e) {
 }
 
 /** Joins each email with its insight, then splits into priority vs the rest. */
-async function inbox(userId, { includeIgnored = false, limit = 200 } = {}) {
+async function inbox(userId, { includeIgnored = false, limit = 200, accountId = null } = {}) {
+  const accounts = await allAccounts(userId);
+
+  // If specific accountId requested, filter by it; otherwise default to first account
+  let targetAccountId = accountId;
+  if (!targetAccountId && accounts.length > 0) {
+    targetAccountId = String(accounts[0]._id);
+  }
+
+  const query = { userId };
+  if (targetAccountId && targetAccountId !== 'all') {
+    query.accountId = targetAccountId;
+  }
+
   const emails = await Email.find(
-    { userId },
+    query,
     { bodyHtml: 0, bodyText: 0 }
   )
     .sort({ receivedAt: -1 })
@@ -124,6 +143,13 @@ async function inbox(userId, { includeIgnored = false, limit = 200 } = {}) {
   );
 
   return {
+    accounts: accounts.map((a) => ({
+      id: String(a._id),
+      emailAddress: a.emailAddress,
+      status: a.status,
+      lastSyncedAt: a.lastSyncedAt,
+    })),
+    selectedAccountId: targetAccountId,
     stats: {
       total: rows.length,
       unread: rows.filter((r) => r.isUnread).length,
@@ -171,6 +197,7 @@ function accountDoc(userId, accountId) {
 module.exports = {
   activeAccount,
   accountStatus,
+  allAccounts,
   accountDoc,
   inbox,
   detail,

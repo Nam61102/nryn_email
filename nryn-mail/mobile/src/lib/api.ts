@@ -150,9 +150,11 @@ const patch = <T,>(p: string, body?: unknown) =>
 
 export const authApi = {
   /** Unauthenticated — returns Google's consent URL for this redirect target. */
-  connectUrl: (redirectUri: string) =>
+  connectUrl: (redirectUri: string, linkUserId?: string) =>
     request<{ url: string }>(
-      `/api/auth/google/url?redirect=${encodeURIComponent(redirectUri)}`,
+      `/api/auth/google/url?redirect=${encodeURIComponent(redirectUri)}${
+        linkUserId ? `&linkUser=${encodeURIComponent(linkUserId)}` : ''
+      }`,
       { method: 'GET' },
       false
     ),
@@ -164,12 +166,17 @@ export const authApi = {
 };
 
 export const emailApi = {
-  inbox: (includeIgnored = false) =>
-    get<InboxResponse>(`/api/email/inbox${includeIgnored ? '?includeIgnored=1' : ''}`),
+  inbox: (includeIgnored = false, accountId?: string) => {
+    const params = new URLSearchParams();
+    if (includeIgnored) params.append('includeIgnored', '1');
+    if (accountId) params.append('accountId', accountId);
+    const qs = params.toString();
+    return get<InboxResponse>(`/api/email/inbox${qs ? `?${qs}` : ''}`);
+  },
 
-  sync: () =>
+  sync: (accountId?: string) =>
     post<{ sync: { mode: string; seen: number; inserted: number }; triage: { processed: number } }>(
-      '/api/email/sync'
+      `/api/email/sync${accountId ? `?accountId=${encodeURIComponent(accountId)}` : ''}`
     ),
 
   detail: (id: string) => get<EmailDetail>(`/api/email/${id}`),

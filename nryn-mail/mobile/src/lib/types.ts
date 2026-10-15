@@ -17,9 +17,17 @@ export interface AccountStatus {
   canSend: boolean;
 }
 
+export interface ConnectedAccountInfo {
+  id: string;
+  emailAddress: string;
+  status: string;
+  lastSyncedAt: string | null;
+}
+
 export interface Me {
   user: SessionUser;
   account: AccountStatus | null;
+  accounts?: AccountStatus[];
 }
 
 export interface InboxRow {
@@ -53,7 +61,9 @@ export interface InboxResponse {
   };
   priority: InboxRow[];
   other: InboxRow[];
-  account: { emailAddress: string; status: string; lastSyncedAt: string | null } | null;
+  account: { id?: string; emailAddress: string; status: string; lastSyncedAt: string | null } | null;
+  accounts?: ConnectedAccountInfo[];
+  selectedAccountId?: string;
 }
 
 export interface Attachment {

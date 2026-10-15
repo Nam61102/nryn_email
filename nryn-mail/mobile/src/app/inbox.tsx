@@ -23,7 +23,7 @@ import { BottomNav } from '../ui/BottomNav';
 type StatFilter = 'all' | 'unread' | 'priority' | 'need_reply';
 
 export default function Inbox() {
-  const { me, loading: authLoading } = useAuth();
+  const { me, loading: authLoading, addAccount } = useAuth();
   const [data, setData] = useState<InboxResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -31,16 +31,21 @@ export default function Inbox() {
   const [seeAllOther, setSeeAllOther] = useState(false);
   const [error, setError] = useState<{ title: string; detail?: string; hint?: string } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     if (!authLoading && !me) router.replace('/');
   }, [authLoading, me]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (accId?: string) => {
     try {
-      const res = await emailApi.inbox(true);
+      const targetId = accId !== undefined ? accId : (selectedAccountId || undefined);
+      const res = await emailApi.inbox(true, targetId);
       setData(res);
+      if (res.selectedAccountId && !selectedAccountId) {
+        setSelectedAccountId(res.selectedAccountId);
+      }
       setError(null);
     } catch (err) {
       if (err instanceof ApiError) {
@@ -50,7 +55,7 @@ export default function Inbox() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedAccountId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -63,6 +68,21 @@ export default function Inbox() {
       return () => clearInterval(timer);
     }, [load])
   );
+
+  const handleSelectAccount = useCallback((accId: string) => {
+    if (accId === selectedAccountId) return;
+    setSelectedAccountId(accId);
+    setLoading(true);
+    load(accId);
+  }, [load, selectedAccountId]);
+
+  const handleAddAccount = useCallback(async () => {
+    try {
+      await addAccount();
+    } catch {
+      showToast('Could not start email connection');
+    }
+  }, [addAccount]);
 
   const showToast = useCallback((text: string) => {
     setToast(text);
@@ -86,11 +106,11 @@ export default function Inbox() {
     showToast('Checking for new emails…');
     try {
       // 1. Instantly reload existing database rows
-      await load();
+      await load(selectedAccountId || undefined);
 
-      // 2. Trigger fresh sync from Gmail
+      // 2. Trigger fresh sync from Gmail for the active account
       try {
-        const res = await emailApi.sync();
+        const res = await emailApi.sync(selectedAccountId || undefined);
         if (res && res.sync && res.sync.inserted > 0) {
           showToast(`${res.sync.inserted} new email${res.sync.inserted === 1 ? '' : 's'} fetched!`);
         } else {
@@ -105,7 +125,7 @@ export default function Inbox() {
       }
 
       // 3. Final load to ensure all new parsed emails render
-      await load();
+      await load(selectedAccountId || undefined);
     } catch (err: any) {
       showToast(err?.message || 'Could not refresh inbox.');
     } finally {
@@ -224,6 +244,71 @@ export default function Inbox() {
             <Feather name="zap" size={16} color={colors.white} />
             <Text style={s.reviewBtnText}>REVIEW PRIORITY</Text>
           </Pressable>
+        </View>
+
+        {/* Connected Email Accounts Switcher */}
+        <View style={s.accountSwitcherSection}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={s.accountSwitcherList}
+          >
+            {(data?.accounts && data.accounts.length > 0
+              ? data.accounts
+              : data?.account
+                ? [
+                    {
+                      id: data.selectedAccountId || 'default',
+                      emailAddress: data.account.emailAddress,
+                      status: data.account.status,
+                      lastSyncedAt: data.account.lastSyncedAt,
+                    },
+                  ]
+                : []
+            ).map((acc, idx) => {
+              const isSelected =
+                selectedAccountId === acc.id ||
+                (!selectedAccountId && (data?.selectedAccountId === acc.id || idx === 0));
+              return (
+                <Pressable
+                  key={acc.id}
+                  onPress={() => handleSelectAccount(acc.id)}
+                  style={({ pressed }) => [
+                    s.accountChip,
+                    isSelected && s.accountChipActive,
+                    pressed && { opacity: 0.8 },
+                  ]}
+                  hitSlop={6}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Switch to account ${acc.emailAddress}`}
+                >
+                  <View style={[s.accountDot, isSelected && s.accountDotActive]} />
+                  <Text
+                    style={[s.accountChipText, isSelected && s.accountChipTextActive]}
+                    numberOfLines={1}
+                  >
+                    {acc.emailAddress}
+                  </Text>
+                  {isSelected && (
+                    <View style={s.accountActiveBadge}>
+                      <Feather name="check" size={10} color={colors.white} />
+                    </View>
+                  )}
+                </Pressable>
+              );
+            })}
+
+            <Pressable
+              onPress={handleAddAccount}
+              style={({ pressed }) => [s.addAccountBtn, pressed && { opacity: 0.7 }]}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Add another email account"
+            >
+              <Feather name="plus" size={14} color={colors.primary} />
+              <Text style={s.addAccountBtnText}>Add Email</Text>
+            </Pressable>
+          </ScrollView>
         </View>
 
         {/* Stats Row */}
@@ -848,5 +933,77 @@ const s = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: colors.textBody,
+  },
+  accountSwitcherSection: {
+    marginVertical: 2,
+  },
+  accountSwitcherList: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingRight: 12,
+  },
+  accountChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: colors.borderSoft,
+    shadowColor: '#000',
+    shadowOpacity: 0.02,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+  },
+  accountChipActive: {
+    backgroundColor: colors.primaryTint,
+    borderColor: colors.primary,
+  },
+  accountDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.textMuted,
+  },
+  accountDotActive: {
+    backgroundColor: colors.primary,
+  },
+  accountChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textMuted,
+    maxWidth: 160,
+  },
+  accountChipTextActive: {
+    color: colors.primary,
+    fontWeight: '700',
+  },
+  accountActiveBadge: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addAccountBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    borderStyle: 'dashed',
+  },
+  addAccountBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.primary,
   },
 });
