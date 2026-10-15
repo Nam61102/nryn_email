@@ -12,7 +12,7 @@ import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 
 import { ApiError, authApi, tokenStore } from './api';
-import type { Me } from './types';
+import type { Me, StoredAccount } from './types';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -21,6 +21,9 @@ interface AuthValue {
   loading: boolean;
   signingIn: boolean;
   error: { title: string; detail?: string; hint?: string } | null;
+  accounts: StoredAccount[];
+  activeEmail: string | null;
+  switchAccount: (email: string) => Promise<void>;
   signIn: () => Promise<void>;
   addAccount: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -38,18 +41,40 @@ export function useAuth() {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
+  const [accounts, setAccounts] = useState<StoredAccount[]>([]);
+  const [activeEmail, setActiveEmail] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [signingIn, setSigningIn] = useState(false);
   const [error, setError] = useState<AuthValue['error']>(null);
 
   const refresh = useCallback(async () => {
+    const storedAccounts = await tokenStore.getAccounts();
+    setAccounts(storedAccounts);
+
+    const active = await tokenStore.getActiveEmail();
+    setActiveEmail(active);
+
     const token = await tokenStore.get();
     if (!token) {
       setMe(null);
       return;
     }
     try {
-      setMe(await authApi.me());
+      const meData = await authApi.me();
+      setMe(meData);
+
+      if (meData?.user?.email) {
+        await tokenStore.addAccount({
+          id: meData.user.email,
+          emailAddress: meData.user.email,
+          token,
+          displayName: meData.user.displayName,
+          status: meData.account?.status,
+          lastSyncedAt: meData.account?.lastSyncedAt,
+        });
+        const updatedAccounts = await tokenStore.getAccounts();
+        setAccounts(updatedAccounts);
+      }
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         await tokenStore.clear();
@@ -143,8 +168,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const { token } = await authApi.exchange(code);
-      await tokenStore.set(token);
+      const { token, user } = await authApi.exchange(code);
+      await tokenStore.set(token, user?.email);
       await refresh();
     } catch (err) {
       if (err instanceof ApiError) {
@@ -207,8 +232,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const { token } = await authApi.exchange(code);
-      await tokenStore.set(token);
+      const { token, user } = await authApi.exchange(code);
+      if (user?.email) {
+        await tokenStore.addAccount({
+          id: user.email,
+          emailAddress: user.email,
+          token,
+          displayName: user.displayName,
+        });
+        await tokenStore.switchAccount(user.email);
+      } else {
+        await tokenStore.set(token);
+      }
       await refresh();
     } catch (err) {
       if (err instanceof ApiError) {
@@ -224,6 +259,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSigningIn(false);
     }
   }, [me?.user?.id, refresh]);
+
+  const switchAccount = useCallback(
+    async (email: string) => {
+      setLoading(true);
+      try {
+        await tokenStore.switchAccount(email);
+        setActiveEmail(email);
+        await refresh();
+      } finally {
+        setLoading(false);
+      }
+    },
+    [refresh]
+  );
 
   const signOut = useCallback(async () => {
     try {
@@ -241,13 +290,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       signingIn,
       error,
+      accounts,
+      activeEmail,
+      switchAccount,
       signIn,
       addAccount,
       signOut,
       refresh,
       clearError: () => setError(null),
     }),
-    [me, loading, signingIn, error, signIn, addAccount, signOut, refresh]
+    [me, loading, signingIn, error, accounts, activeEmail, switchAccount, signIn, addAccount, signOut, refresh]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

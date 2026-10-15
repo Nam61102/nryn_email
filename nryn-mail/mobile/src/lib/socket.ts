@@ -20,7 +20,7 @@ type Handlers = {
  * to a room named after the user id, so these events are per-user — never a
  * global broadcast, which would leak one user's mail metadata to every client.
  */
-export function useLiveUpdates(enabled: boolean, handlers: Handlers) {
+export function useLiveUpdates(enabled: boolean, handlers: Handlers, accountKey?: string | null) {
   const socketRef = useRef<Socket | null>(null);
   const handlersRef = useRef(handlers);
   handlersRef.current = handlers;
@@ -54,7 +54,7 @@ export function useLiveUpdates(enabled: boolean, handlers: Handlers) {
       }
       socketRef.current = null;
     };
-  }, [enabled]);
+  }, [enabled, accountKey]);
 
   return socketRef;
 }

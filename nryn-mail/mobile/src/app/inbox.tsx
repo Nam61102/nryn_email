@@ -23,7 +23,7 @@ import { BottomNav } from '../ui/BottomNav';
 type StatFilter = 'all' | 'unread' | 'priority' | 'need_reply';
 
 export default function Inbox() {
-  const { me, loading: authLoading, addAccount } = useAuth();
+  const { me, loading: authLoading, accounts, activeEmail, switchAccount, addAccount } = useAuth();
   const [data, setData] = useState<InboxResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -31,21 +31,16 @@ export default function Inbox() {
   const [seeAllOther, setSeeAllOther] = useState(false);
   const [error, setError] = useState<{ title: string; detail?: string; hint?: string } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     if (!authLoading && !me) router.replace('/');
   }, [authLoading, me]);
 
-  const load = useCallback(async (accId?: string) => {
+  const load = useCallback(async () => {
     try {
-      const targetId = accId !== undefined ? accId : (selectedAccountId || undefined);
-      const res = await emailApi.inbox(true, targetId);
+      const res = await emailApi.inbox(true);
       setData(res);
-      if (res.selectedAccountId && !selectedAccountId) {
-        setSelectedAccountId(res.selectedAccountId);
-      }
       setError(null);
     } catch (err) {
       if (err instanceof ApiError) {
@@ -55,7 +50,7 @@ export default function Inbox() {
     } finally {
       setLoading(false);
     }
-  }, [selectedAccountId]);
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -69,12 +64,29 @@ export default function Inbox() {
     }, [load])
   );
 
-  const handleSelectAccount = useCallback((accId: string) => {
-    if (accId === selectedAccountId) return;
-    setSelectedAccountId(accId);
-    setLoading(true);
-    load(accId);
-  }, [load, selectedAccountId]);
+  const showToast = useCallback((text: string) => {
+    setToast(text);
+    setTimeout(() => setToast(null), 4000);
+  }, []);
+
+  const handleSelectAccount = useCallback(
+    async (email: string) => {
+      const currentActive = (activeEmail || me?.user?.email || '').toLowerCase();
+      if (currentActive === email.toLowerCase()) return;
+      setLoading(true);
+      try {
+        await switchAccount(email);
+        const res = await emailApi.inbox(true);
+        setData(res);
+        showToast(`Switched to ${email}`);
+      } catch {
+        showToast(`Failed to switch to ${email}`);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [activeEmail, me?.user?.email, switchAccount, showToast]
+  );
 
   const handleAddAccount = useCallback(async () => {
     try {
@@ -82,23 +94,22 @@ export default function Inbox() {
     } catch {
       showToast('Could not start email connection');
     }
-  }, [addAccount]);
+  }, [addAccount, showToast]);
 
-  const showToast = useCallback((text: string) => {
-    setToast(text);
-    setTimeout(() => setToast(null), 4000);
-  }, []);
-
-  useLiveUpdates(Boolean(me), {
-    onSynced: ({ count }) => {
-      load();
-      if (count > 0) showToast(`${count} new email${count === 1 ? '' : 's'} synced.`);
+  useLiveUpdates(
+    Boolean(me),
+    {
+      onSynced: ({ count }) => {
+        load();
+        if (count > 0) showToast(`${count} new email${count === 1 ? '' : 's'} synced.`);
+      },
+      onNewInsight: ({ fromName, insight }) => {
+        load();
+        showToast(`${fromName}: ${insight}`);
+      },
     },
-    onNewInsight: ({ fromName, insight }) => {
-      load();
-      showToast(`${fromName}: ${insight}`);
-    },
-  });
+    activeEmail
+  );
 
   async function onRefresh() {
     if (refreshing) return;
@@ -106,11 +117,11 @@ export default function Inbox() {
     showToast('Checking for new emails…');
     try {
       // 1. Instantly reload existing database rows
-      await load(selectedAccountId || undefined);
+      await load();
 
       // 2. Trigger fresh sync from Gmail for the active account
       try {
-        const res = await emailApi.sync(selectedAccountId || undefined);
+        const res = await emailApi.sync();
         if (res && res.sync && res.sync.inserted > 0) {
           showToast(`${res.sync.inserted} new email${res.sync.inserted === 1 ? '' : 's'} fetched!`);
         } else {
@@ -125,7 +136,7 @@ export default function Inbox() {
       }
 
       // 3. Final load to ensure all new parsed emails render
-      await load(selectedAccountId || undefined);
+      await load();
     } catch (err: any) {
       showToast(err?.message || 'Could not refresh inbox.');
     } finally {
@@ -253,26 +264,13 @@ export default function Inbox() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={s.accountSwitcherList}
           >
-            {(data?.accounts && data.accounts.length > 0
-              ? data.accounts
-              : data?.account
-                ? [
-                    {
-                      id: data.selectedAccountId || 'default',
-                      emailAddress: data.account.emailAddress,
-                      status: data.account.status,
-                      lastSyncedAt: data.account.lastSyncedAt,
-                    },
-                  ]
-                : []
-            ).map((acc, idx) => {
-              const isSelected =
-                selectedAccountId === acc.id ||
-                (!selectedAccountId && (data?.selectedAccountId === acc.id || idx === 0));
+            {accounts.map((acc) => {
+              const currentActive = (activeEmail || me?.user?.email || '').toLowerCase();
+              const isSelected = currentActive === acc.emailAddress.toLowerCase();
               return (
                 <Pressable
-                  key={acc.id}
-                  onPress={() => handleSelectAccount(acc.id)}
+                  key={acc.emailAddress}
+                  onPress={() => handleSelectAccount(acc.emailAddress)}
                   style={({ pressed }) => [
                     s.accountChip,
                     isSelected && s.accountChipActive,

@@ -11,7 +11,7 @@ import { Button, Chip, ErrorNote, formatWhen } from '../ui/components';
 import { BottomNav } from '../ui/BottomNav';
 
 export default function Account() {
-  const { me, signOut, addAccount } = useAuth();
+  const { me, signOut, addAccount, accounts, activeEmail, switchAccount } = useAuth();
   const [busy, setBusy] = useState(false);
 
   async function disconnect() {
@@ -25,7 +25,7 @@ export default function Account() {
   }
 
   const account = me?.account;
-  const accounts = me?.accounts && me.accounts.length > 0 ? me.accounts : (account ? [account] : []);
+  const displayAccounts = accounts.length > 0 ? accounts : (account ? [account] : []);
 
   return (
     <View style={s.root}>
@@ -56,7 +56,7 @@ export default function Account() {
         {/* Connected Email Accounts Section */}
         <View style={s.card}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            <Text style={s.sectionTitle}>CONNECTED EMAIL ACCOUNTS ({accounts.length})</Text>
+            <Text style={s.sectionTitle}>CONNECTED EMAIL ACCOUNTS ({displayAccounts.length})</Text>
             <Pressable
               onPress={() => addAccount()}
               style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', gap: 5 }, pressed && { opacity: 0.7 }]}
@@ -67,39 +67,54 @@ export default function Account() {
             </Pressable>
           </View>
 
-          {accounts.map((acc, index) => (
-            <View
-              key={acc.id || index}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 12,
-                paddingVertical: 10,
-                borderTopWidth: index > 0 ? 1 : 0,
-                borderTopColor: colors.borderSoft,
-              }}
-            >
-              <View style={[s.mark, { width: 34, height: 34, borderRadius: 17 }]}>
-                <Feather name="mail" size={16} color={colors.primaryDark} />
-              </View>
-              <View style={{ flex: 1, gap: 3 }}>
-                <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text }}>
-                  {acc.emailAddress}
-                </Text>
-                <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <Chip tone={acc.status === 'active' ? 'success' : 'urgent'}>
-                    {acc.status === 'active' ? 'Gmail connected' : 'Reauth required'}
-                  </Chip>
-                  {acc.canSend ? <Chip tone="primary">Send enabled</Chip> : null}
-                  {acc.lastSyncedAt ? (
-                    <Text style={{ fontSize: 11, color: colors.textMuted }}>
-                      Synced {formatWhen(acc.lastSyncedAt)}
-                    </Text>
-                  ) : null}
+          {displayAccounts.map((acc, index) => {
+            const isSelected = (activeEmail || me?.user?.email || '').toLowerCase() === acc.emailAddress.toLowerCase();
+            return (
+              <Pressable
+                key={acc.emailAddress || index}
+                onPress={async () => {
+                  if (!isSelected) {
+                    await switchAccount(acc.emailAddress);
+                  }
+                }}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 12,
+                  paddingVertical: 10,
+                  borderTopWidth: index > 0 ? 1 : 0,
+                  borderTopColor: colors.borderSoft,
+                }}
+              >
+                <View style={[s.mark, { width: 34, height: 34, borderRadius: 17 }, isSelected && { backgroundColor: colors.primaryTint }]}>
+                  <Feather name="mail" size={16} color={isSelected ? colors.primary : colors.primaryDark} />
                 </View>
-              </View>
-            </View>
-          ))}
+                <View style={{ flex: 1, gap: 3 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text }}>
+                    {acc.emailAddress}
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                    {isSelected ? (
+                      <Chip tone="primary">Active Mailbox</Chip>
+                    ) : (
+                      <Chip tone="neutral">Tap to Switch</Chip>
+                    )}
+                    <Chip tone={acc.status === 'reauth_required' ? 'urgent' : 'success'}>
+                      Gmail connected
+                    </Chip>
+                    {acc.lastSyncedAt ? (
+                      <Text style={{ fontSize: 11, color: colors.textMuted }}>
+                        Synced {formatWhen(acc.lastSyncedAt)}
+                      </Text>
+                    ) : null}
+                  </View>
+                </View>
+                {isSelected && (
+                  <Feather name="check-circle" size={18} color={colors.primary} />
+                )}
+              </Pressable>
+            );
+          })}
         </View>
 
         {account?.status === 'reauth_required' ? (

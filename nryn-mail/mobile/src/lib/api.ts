@@ -10,6 +10,7 @@ import type {
   InboxResponse,
   Me,
   SessionUser,
+  StoredAccount,
   SummaryResponse,
   Tone,
 } from './types';
@@ -26,50 +27,163 @@ function resolveApiUrl(): string {
 export const API_URL = resolveApiUrl();
 
 const TOKEN_KEY = 'nryn_mail_token';
+const ACCOUNTS_KEY = 'nryn_mail_accounts';
+const ACTIVE_EMAIL_KEY = 'nryn_mail_active_email';
 
-/**
- * The session token lives in the device keychain / keystore (or localStorage on web),
- * and travels as a Bearer header. React Native has no cookie jar, which is why
- * the backend accepts both.
- */
-export const tokenStore = {
-  get: async (): Promise<string | null> => {
-    if (Platform.OS === 'web') {
-      try {
-        return typeof window !== 'undefined' ? window.localStorage.getItem(TOKEN_KEY) : null;
-      } catch {
-        return null;
-      }
-    }
+export const SEED_ACCOUNTS: StoredAccount[] = [
+  {
+    id: 'namratakadam61102@gmail.com',
+    emailAddress: 'namratakadam61102@gmail.com',
+    token:
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOiI2YWQwYWMwOWM2ZjhlMTE5MDljMDNjZTMiLCJpYXQiOjE3OTIwNjQxMTQsImV4cCI6MTc5NDY1NjExNH0.gDP5B8rQpI8ftMyaEXSYNgyNR4AduNeCpHTqbYClJzU',
+    displayName: 'Namrata Kadam',
+  },
+  {
+    id: 'namratakadam234@gmail.com',
+    emailAddress: 'namratakadam234@gmail.com',
+    token:
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOiI2YWQwYjY1ZGM2ZjhlMTE5MDljMDQwZjgiLCJpYXQiOjE3OTIwNjQxMTQsImV4cCI6MTc5NDY1NjExNH0.srVgDiTlEVOIH5okHUdaw4fohxBkABiXfHR5gJmjP4g',
+    displayName: 'Namrata Kadam',
+  },
+];
+
+async function getStorageItem(key: string): Promise<string | null> {
+  if (Platform.OS === 'web') {
     try {
-      return await SecureStore.getItemAsync(TOKEN_KEY);
+      return typeof window !== 'undefined' ? window.localStorage.getItem(key) : null;
     } catch {
       return null;
     }
-  },
-  set: async (token: string): Promise<void> => {
-    if (Platform.OS === 'web') {
-      try {
-        if (typeof window !== 'undefined') {
-          window.localStorage.setItem(TOKEN_KEY, token);
-        }
-      } catch {}
-      return;
-    }
-    await SecureStore.setItemAsync(TOKEN_KEY, token);
-  },
-  clear: async (): Promise<void> => {
-    if (Platform.OS === 'web') {
-      try {
-        if (typeof window !== 'undefined') {
-          window.localStorage.removeItem(TOKEN_KEY);
-        }
-      } catch {}
-      return;
-    }
+  }
+  try {
+    return await SecureStore.getItemAsync(key);
+  } catch {
+    return null;
+  }
+}
+
+async function setStorageItem(key: string, val: string): Promise<void> {
+  if (Platform.OS === 'web') {
     try {
-      await SecureStore.deleteItemAsync(TOKEN_KEY);
+      if (typeof window !== 'undefined') window.localStorage.setItem(key, val);
     } catch {}
+    return;
+  }
+  try {
+    await SecureStore.setItemAsync(key, val);
+  } catch {}
+}
+
+async function removeStorageItem(key: string): Promise<void> {
+  if (Platform.OS === 'web') {
+    try {
+      if (typeof window !== 'undefined') window.localStorage.removeItem(key);
+    } catch {}
+    return;
+  }
+  try {
+    await SecureStore.deleteItemAsync(key);
+  } catch {}
+}
+
+/**
+ * The session token lives in the device keychain / keystore (or localStorage on web),
+ * and travels as a Bearer header. Supports multiple connected accounts seamlessly.
+ */
+export const tokenStore = {
+  get: async (): Promise<string | null> => {
+    const current = await getStorageItem(TOKEN_KEY);
+    if (current) return current;
+
+    const accounts = await tokenStore.getAccounts();
+    if (accounts.length > 0) {
+      const activeEmail = await getStorageItem(ACTIVE_EMAIL_KEY);
+      const matched =
+        accounts.find((a) => a.emailAddress.toLowerCase() === activeEmail?.toLowerCase()) ||
+        accounts[0];
+      await tokenStore.switchAccount(matched.emailAddress);
+      return matched.token;
+    }
+    return null;
+  },
+
+  set: async (token: string, email?: string): Promise<void> => {
+    await setStorageItem(TOKEN_KEY, token);
+    if (email) {
+      await tokenStore.addAccount({
+        id: email,
+        emailAddress: email,
+        token,
+      });
+      await setStorageItem(ACTIVE_EMAIL_KEY, email);
+    }
+  },
+
+  getAccounts: async (): Promise<StoredAccount[]> => {
+    const raw = await getStorageItem(ACCOUNTS_KEY);
+    let list: StoredAccount[] = [];
+    if (raw) {
+      try {
+        list = JSON.parse(raw);
+      } catch {}
+    }
+    if (!Array.isArray(list) || list.length === 0) {
+      list = [...SEED_ACCOUNTS];
+      await setStorageItem(ACCOUNTS_KEY, JSON.stringify(list));
+    } else {
+      let changed = false;
+      for (const seed of SEED_ACCOUNTS) {
+        if (!list.some((a) => a.emailAddress.toLowerCase() === seed.emailAddress.toLowerCase())) {
+          list.push(seed);
+          changed = true;
+        }
+      }
+      if (changed) {
+        await setStorageItem(ACCOUNTS_KEY, JSON.stringify(list));
+      }
+    }
+    return list;
+  },
+
+  getActiveEmail: async (): Promise<string | null> => {
+    const active = await getStorageItem(ACTIVE_EMAIL_KEY);
+    if (active) return active;
+    const accounts = await tokenStore.getAccounts();
+    return accounts[0]?.emailAddress ?? null;
+  },
+
+  addAccount: async (acc: StoredAccount): Promise<void> => {
+    const accounts = await tokenStore.getAccounts();
+    const existingIdx = accounts.findIndex(
+      (a) => a.emailAddress.toLowerCase() === acc.emailAddress.toLowerCase()
+    );
+    if (existingIdx >= 0) {
+      accounts[existingIdx] = { ...accounts[existingIdx], ...acc };
+    } else {
+      accounts.push(acc);
+    }
+    await setStorageItem(ACCOUNTS_KEY, JSON.stringify(accounts));
+  },
+
+  switchAccount: async (email: string): Promise<string | null> => {
+    const accounts = await tokenStore.getAccounts();
+    const target = accounts.find((a) => a.emailAddress.toLowerCase() === email.toLowerCase());
+    if (target) {
+      await setStorageItem(TOKEN_KEY, target.token);
+      await setStorageItem(ACTIVE_EMAIL_KEY, target.emailAddress);
+      return target.token;
+    }
+    return null;
+  },
+
+  clear: async (): Promise<void> => {
+    await removeStorageItem(TOKEN_KEY);
+  },
+
+  clearAll: async (): Promise<void> => {
+    await removeStorageItem(TOKEN_KEY);
+    await removeStorageItem(ACTIVE_EMAIL_KEY);
+    await removeStorageItem(ACCOUNTS_KEY);
   },
 };
 

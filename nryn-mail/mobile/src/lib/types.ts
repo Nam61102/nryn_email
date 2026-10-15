@@ -24,6 +24,15 @@ export interface ConnectedAccountInfo {
   lastSyncedAt: string | null;
 }
 
+export interface StoredAccount {
+  id: string;
+  emailAddress: string;
+  token: string;
+  displayName?: string;
+  status?: string;
+  lastSyncedAt?: string | null;
+}
+
 export interface Me {
   user: SessionUser;
   account: AccountStatus | null;
