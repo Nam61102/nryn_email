@@ -66,18 +66,23 @@ const server = http.createServer(app);
 
 async function main() {
   env.warnOnce();
-  await db.connect();
   socket.init(server);
 
   server.listen(env.port, () => {
-    log.info('server', `NRYN Mail API listening on http://localhost:${env.port}`);
+    log.info('server', `NRYN Mail API listening on port ${env.port}`);
     log.info('server', `mobile deep-link scheme: ${env.appScheme}:// (must match mobile/app.json)`);
     log.info(
       'server',
       'the phone reaches this at http://<your-LAN-IP>:' + env.port + ' — set EXPO_PUBLIC_API_URL in mobile/.env'
     );
-    syncJob.start();
   });
+
+  try {
+    await db.connect();
+    syncJob.start();
+  } catch (err) {
+    log.error('server', 'Initial MongoDB connection failed: ' + err.message);
+  }
 }
 
 // A rejection that reaches here would otherwise kill the process silently.
