@@ -271,7 +271,7 @@ export default function CalendarScreen() {
     return `${monthName} ${parseInt(d, 10)}`;
   }, [selectedDate, isSelectedToday]);
 
-  const userName = me?.user?.displayName || dayData?.user?.displayName || 'Namrata';
+  const userName = me?.user?.displayName || dayData?.user?.displayName || (me?.user?.email ? me.user.email.split('@')[0] : 'User');
 
   return (
     <View style={s.container}>

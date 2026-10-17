@@ -52,8 +52,8 @@ async function ensureSeedEvents(userId) {
   log.info('calendar', `extracting dynamic calendar events from user emails for user ${userId}`);
 
   const user = await User.findById(userId).lean();
-  const userEmail = user?.email || 'namratakadam61102@gmail.com';
-  const userName = user?.displayName || 'Namrata Kadam';
+  const userEmail = user?.email || '';
+  const userName = user?.displayName || 'User';
 
   const now = new Date();
   const todayStr = now.toISOString().slice(0, 10);

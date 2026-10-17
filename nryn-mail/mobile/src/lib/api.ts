@@ -30,23 +30,6 @@ const TOKEN_KEY = 'nryn_mail_token';
 const ACCOUNTS_KEY = 'nryn_mail_accounts';
 const ACTIVE_EMAIL_KEY = 'nryn_mail_active_email';
 
-export const SEED_ACCOUNTS: StoredAccount[] = [
-  {
-    id: 'namratakadam61102@gmail.com',
-    emailAddress: 'namratakadam61102@gmail.com',
-    token:
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOiI2YWQwYWMwOWM2ZjhlMTE5MDljMDNjZTMiLCJpYXQiOjE3OTIwNjQxMTQsImV4cCI6MTc5NDY1NjExNH0.gDP5B8rQpI8ftMyaEXSYNgyNR4AduNeCpHTqbYClJzU',
-    displayName: 'Namrata Kadam',
-  },
-  {
-    id: 'namratakadam234@gmail.com',
-    emailAddress: 'namratakadam234@gmail.com',
-    token:
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOiI2YWQwYjY1ZGM2ZjhlMTE5MDljMDQwZjgiLCJpYXQiOjE3OTIwNjQxMTQsImV4cCI6MTc5NDY1NjExNH0.srVgDiTlEVOIH5okHUdaw4fohxBkABiXfHR5gJmjP4g',
-    displayName: 'Namrata Kadam',
-  },
-];
-
 async function getStorageItem(key: string): Promise<string | null> {
   if (Platform.OS === 'web') {
     try {
@@ -127,22 +110,7 @@ export const tokenStore = {
         list = JSON.parse(raw);
       } catch {}
     }
-    if (!Array.isArray(list) || list.length === 0) {
-      list = [...SEED_ACCOUNTS];
-      await setStorageItem(ACCOUNTS_KEY, JSON.stringify(list));
-    } else {
-      let changed = false;
-      for (const seed of SEED_ACCOUNTS) {
-        if (!list.some((a) => a.emailAddress.toLowerCase() === seed.emailAddress.toLowerCase())) {
-          list.push(seed);
-          changed = true;
-        }
-      }
-      if (changed) {
-        await setStorageItem(ACCOUNTS_KEY, JSON.stringify(list));
-      }
-    }
-    return list;
+    return Array.isArray(list) ? list : [];
   },
 
   getActiveEmail: async (): Promise<string | null> => {
@@ -165,6 +133,22 @@ export const tokenStore = {
     await setStorageItem(ACCOUNTS_KEY, JSON.stringify(accounts));
   },
 
+  removeAccount: async (email: string): Promise<void> => {
+    const accounts = await tokenStore.getAccounts();
+    const filtered = accounts.filter(
+      (a) => a.emailAddress.toLowerCase() !== email.toLowerCase()
+    );
+    await setStorageItem(ACCOUNTS_KEY, JSON.stringify(filtered));
+    const activeEmail = await getStorageItem(ACTIVE_EMAIL_KEY);
+    if (activeEmail && activeEmail.toLowerCase() === email.toLowerCase()) {
+      if (filtered.length > 0) {
+        await tokenStore.switchAccount(filtered[0].emailAddress);
+      } else {
+        await tokenStore.clearAll();
+      }
+    }
+  },
+
   switchAccount: async (email: string): Promise<string | null> => {
     const accounts = await tokenStore.getAccounts();
     const target = accounts.find((a) => a.emailAddress.toLowerCase() === email.toLowerCase());
@@ -177,7 +161,7 @@ export const tokenStore = {
   },
 
   clear: async (): Promise<void> => {
-    await removeStorageItem(TOKEN_KEY);
+    await tokenStore.clearAll();
   },
 
   clearAll: async (): Promise<void> => {

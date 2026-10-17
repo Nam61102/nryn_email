@@ -77,7 +77,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
-        await tokenStore.clear();
+        await tokenStore.clearAll();
+        setAccounts([]);
+        setActiveEmail(null);
         setMe(null);
       } else if (err instanceof ApiError && err.status === 0) {
         setError({ title: 'Backend unreachable', detail: err.message, hint: err.hint });
@@ -280,7 +282,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // Disconnecting locally still matters even if the server call failed.
     }
-    await tokenStore.clear();
+    await tokenStore.clearAll();
+    setAccounts([]);
+    setActiveEmail(null);
     setMe(null);
   }, []);
 
